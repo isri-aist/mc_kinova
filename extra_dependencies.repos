@@ -1,0 +1,13 @@
+repositories:
+  bota_driver_ros2:
+    type: git
+    url: https://gitlab.com/botasys/drivers/bota_driver_ros2
+    version: main
+  ros2_robotiq_gripper:
+    type: git
+    url: https://github.com/PickNikRobotics/ros2_robotiq_gripper
+    version: main
+  robotiq_hande_description:
+    type: git
+    url: https://github.com/macmacal/robotiq_hande_description
+    version: humble-devel

@@ -3,16 +3,10 @@ name: Default Kinova build
 on:
   workflow_dispatch:
   push:
-    branches:
-      - '**'
-  pull_request:
-    branches:
-      - '**'
-  schedule:
-    - cron: '0 23 * * 0,1,4'
+    branches: ['**']
 
 jobs:
-  build_default:
+  build:
     runs-on: ubuntu-22.04
 
     strategy:
@@ -30,11 +24,19 @@ jobs:
         with:
           submodules: recursive
 
+      # ── Pre-commit ──
+      - name: Cache pre-commit
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+
       - name: Run pre-commit
         run: |
           pip install pre-commit
           pre-commit run --all-files
 
+      # ── ROS ──
       - name: Setup ROS
         run: |
           set -eux
@@ -55,6 +57,7 @@ jobs:
           sudo apt update
           sudo apt install -y ros-${ROS_DISTRO}-ros-base
 
+      # ── mc_rtc ──
       - name: Install mc_rtc
         run: |
           set -e
@@ -67,27 +70,29 @@ jobs:
             ros-${ROS_DISTRO}-mc-rtc-plugin \
             ros-${ROS_DISTRO}-xacro
 
+      # ── ROS2 description packages (cached) ──
       - name: Cache ROS2 workspace
         id: cache-ros2
         uses: actions/cache@v4
         with:
           path: /tmp/ros2_ws
-          key: ros2-ws-${{ hashFiles('.github/workflows/ci.yml') }}
+          key: ros2-ws-${{ hashFiles('default_dependencies.repos') }}
 
       - name: Install ROS description packages
+        if: steps.cache-ros2.outputs.cache-hit != 'true'
         run: |
           set -e
           source /opt/ros/${ROS_DISTRO}/setup.bash
-          sudo apt install -y python3-colcon-common-extensions
+          sudo apt install -y python3-colcon-common-extensions python3-vcstool
 
           mkdir -p /tmp/ros2_ws/src
-          cd /tmp/ros2_ws/src
-          git clone --depth 1 https://github.com/Kinovarobotics/ros2_kortex.git
+          vcs import --shallow --input default_dependencies.repos /tmp/ros2_ws/src
 
           cd /tmp/ros2_ws
           colcon build --packages-select \
             kortex_description
 
+      # ── Environment ──
       - name: Export environment
         run: |
           source /opt/ros/${ROS_DISTRO}/setup.bash
@@ -99,6 +104,7 @@ jobs:
           echo "PYTHONPATH=$PYTHONPATH" >> $GITHUB_ENV
           echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH" >> $GITHUB_ENV
 
+      # ── Build & Test ──
       - name: Build and test
         uses: jrl-umi3218/github-actions/build-cmake-project@master
         with:

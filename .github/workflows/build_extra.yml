@@ -3,11 +3,9 @@ name: Kinova Variants build
 on:
   workflow_dispatch:
   push:
-    branches:
-      - '**'
+    branches: ['**']
   pull_request:
-    branches:
-      - '**'
+    branches: ['**']
   schedule:
     - cron: '0 23 * * 0,1,4'
 
@@ -30,11 +28,19 @@ jobs:
         with:
           submodules: recursive
 
+      # ── Pre-commit ──
+      - name: Cache pre-commit
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+
       - name: Run pre-commit
         run: |
           pip install pre-commit
           pre-commit run --all-files
 
+      # ── ROS ──
       - name: Setup ROS
         run: |
           set -eux
@@ -55,6 +61,7 @@ jobs:
           sudo apt update
           sudo apt install -y ros-${ROS_DISTRO}-ros-base
 
+      # ── mc_rtc ──
       - name: Install mc_rtc
         run: |
           set -e
@@ -67,32 +74,33 @@ jobs:
             ros-${ROS_DISTRO}-mc-rtc-plugin \
             ros-${ROS_DISTRO}-xacro
 
+      # ── ROS2 description packages (cached) ──
       - name: Cache ROS2 workspace
         id: cache-ros2
         uses: actions/cache@v4
         with:
           path: /tmp/ros2_ws
-          key: ros2-ws-${{ hashFiles('.github/workflows/ci.yml') }}
+          key: ros2-ws-${{ hashFiles('default_dependencies.repos', 'extra_dependencies.repos') }}
 
       - name: Install ROS description packages
         if: steps.cache-ros2.outputs.cache-hit != 'true'
         run: |
           set -e
           source /opt/ros/${ROS_DISTRO}/setup.bash
-          sudo apt install -y python3-colcon-common-extensions
+          sudo apt install -y python3-colcon-common-extensions python3-vcstool
 
           mkdir -p /tmp/ros2_ws/src
-          cd /tmp/ros2_ws/src
-          git clone --depth 1 https://github.com/Kinovarobotics/ros2_kortex
-          git clone --depth 1 https://gitlab.com/botasys/drivers/bota_driver_ros2
-          git clone --depth 1 https://github.com/PickNikRobotics/ros2_robotiq_gripper
+          vcs import --shallow --input default_dependencies.repos /tmp/ros2_ws/src
+          vcs import --shallow --input extra_dependencies.repos /tmp/ros2_ws/src
 
           cd /tmp/ros2_ws
           colcon build --packages-select \
             kortex_description \
             bota_driver \
-            robotiq_description
+            robotiq_description \
+            robotiq_hande_description
 
+      # ── Environment ──
       - name: Export environment
         run: |
           source /opt/ros/${ROS_DISTRO}/setup.bash
@@ -109,9 +117,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /tmp/mc_robot_tools
-          key: mc-robot-tools-${{ hashFiles('.github/workflows/build_variants.yml') }}
+          key: mc-robot-tools-${{ hashFiles('extra_dependencies.repos') }}
 
-      - name: Install mc_robot_tools
+      - name: Build mc_robot_tools
+        if: steps.cache-mc-tools.outputs.cache-hit != 'true'
         run: |
           set -e
 
@@ -126,16 +135,15 @@ jobs:
               -DWITH_PLATE=ON \
               -DWITH_REALSENSE_CAMERA=ON \
               -DWITH_ROBOTIQ_GRIPPER=ON \
+              -DWITH_ROBOTIQ_HANDE=ON \
               -DWITH_SCREW=ON
             make -j$(nproc)
           fi
 
-          # Always install
+      - name: Install mc_robot_tools
+        run: |
           cd /tmp/mc_robot_tools/build
           sudo make install
-
-          # testest
-
           echo "CMAKE_PREFIX_PATH=/usr/local:${CMAKE_PREFIX_PATH}" >> $GITHUB_ENV
 
       - name: Build and test

@@ -49,7 +49,15 @@ void addToolCollisions(mc_rbdyn::RobotModule & module, const std::vector<std::st
 // ═══════════════════════════════════════════════════════════════════════════
 
 static const std::vector<std::string> camera_modules = mc_robot_tools::listRealSense();
-static const std::vector<std::string> gripper_modules = mc_robot_tools::listRobotiqGripper();
+static const std::vector<std::string> gripper_modules = []
+{
+  auto grippers = mc_robot_tools::listRobotiqGripper();
+
+  auto hande = mc_robot_tools::listRobotiqHandE();
+  grippers.insert(grippers.end(), hande.begin(), hande.end());
+
+  return grippers;
+}();
 static const std::vector<std::string> bota_modules = mc_robot_tools::listBotaSensor();
 
 static const std::vector<std::string> end_effectors = []

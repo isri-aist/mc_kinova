@@ -11,6 +11,10 @@ find_file(
   PATHS "${MC_ROBOTS_RUNTIME_INSTALL_PREFIX}"
   NO_DEFAULT_PATH)
 find_file(
+  _HAS_HANDE mc_robotiq_hande.so
+  PATHS "${MC_ROBOTS_RUNTIME_INSTALL_PREFIX}"
+  NO_DEFAULT_PATH)
+find_file(
   _HAS_BOTA mc_bota_sensor.so
   PATHS "${MC_ROBOTS_RUNTIME_INSTALL_PREFIX}"
   NO_DEFAULT_PATH)
@@ -32,6 +36,9 @@ if(_HAS_CAMERA)
 endif()
 if(_HAS_GRIPPER)
   list(APPEND TEST_MODELS "KinovaGripper")
+endif()
+if(_HAS_HANDE)
+  list(APPEND TEST_MODELS "KinovaRobotiqHandEGripper")
 endif()
 if(_HAS_BOTA)
   list(APPEND TEST_MODELS "KinovaBota")
