@@ -33,6 +33,11 @@ KinovaRobotModule::KinovaRobotModule(const std::string & name, bool callib, bool
 
   _ref_joint_order = {"joint_1", "joint_2", "joint_3", "joint_4", "joint_5", "joint_6", "joint_7"};
 
+  _baseFrame = "base_link";
+  _mountFrame = "tool_frame";
+  _collisionLinks = {"base_link", "shoulder_link", "half_arm_1_link", "half_arm_2_link"};
+  _defaultMountingTransform = sva::PTransformd::Identity();
+
   // Override position, velocity and effort bounds
   auto update_joint_limit = [this](const std::string & name, double limit_low, double limit_up)
   {

@@ -9,7 +9,6 @@
 #include <map>
 
 #ifdef WITH_MC_ROBOT_TOOLS
-#  include <mc_robot_tools/ConnectableRobotModule.h>
 #  include <mc_robot_tools/mc_robot_tools.h>
 #endif
 
@@ -25,23 +24,22 @@ bool isAvailable(const std::string & module_name, const std::vector<std::string>
   return std::find(available_robots.begin(), available_robots.end(), module_name) != available_robots.end();
 }
 
-static const std::vector<std::string> kinova_collision_links = {"base_link", "shoulder_link", "half_arm_1_link",
-                                                                "half_arm_2_link"};
-
 static constexpr double COL_I = 0.03;
 static constexpr double COL_S = 0.015;
 static constexpr double COL_D = 0.0;
 
-void addToolCollisions(mc_rbdyn::RobotModule & module, const std::vector<std::string> & tool_links)
+void addToolCollisions(mc_rbdyn::RobotModule & connected_module,
+                       const std::vector<std::string> & kinova_links,
+                       const std::vector<std::string> & tool_links)
 {
-  for(const auto & kinova_link : kinova_collision_links)
+  for(const auto & kinova_link : kinova_links)
   {
     for(const auto & tool_link : tool_links)
     {
-      module._minimalSelfCollisions.push_back({kinova_link, tool_link, COL_I, COL_S, COL_D});
+      connected_module._minimalSelfCollisions.push_back({kinova_link, tool_link, COL_I, COL_S, COL_D});
     }
   }
-  module._commonSelfCollisions = module._minimalSelfCollisions;
+  connected_module._commonSelfCollisions = connected_module._minimalSelfCollisions;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -90,8 +88,8 @@ std::string toLower(std::string s)
   return s;
 }
 
-/** Load a tool module and require it to be a ConnectableRobotModule. */
-std::shared_ptr<mc_robot_tools::ConnectableRobotModule> loadTool(const std::string & name)
+/** Load a tool module by name. */
+std::shared_ptr<mc_rbdyn::RobotModule> loadTool(const std::string & name)
 {
   auto mod = mc_rbdyn::RobotLoader::get_robot_module(name);
   if(!mod)
@@ -100,29 +98,25 @@ std::shared_ptr<mc_robot_tools::ConnectableRobotModule> loadTool(const std::stri
     return nullptr;
   }
 
-  auto connectable = std::static_pointer_cast<mc_robot_tools::ConnectableRobotModule>(mod);
-  if(!connectable)
-  {
-    mc_rtc::log::error("Module '{}' must inherit from mc_robot_tools::ConnectableRobotModule "
-                       "to be attached to Kinova",
-                       name);
-    return nullptr;
-  }
-
-  return connectable;
+  return mod;
 }
 
 /** Attach a tool to a parent module using the tool's self-described frames. */
 mc_rbdyn::RobotModule attachTool(mc_rbdyn::RobotModule & parent,
-                                 const std::string & parent_frame,
-                                 const mc_robot_tools::ConnectableRobotModule & tool,
+                                 const mc_rbdyn::RobotModule & tool,
                                  const std::string & new_name)
 {
   auto connected =
-      parent.connect(tool, parent_frame, tool.baseFrame(), "",
+      parent.connect(tool, parent.mountFrame(), tool.baseFrame(), "",
                      mc_rbdyn::RobotModule::ConnectionParameters{}.X_other_connection(tool.defaultMountingTransform()));
+  addToolCollisions(connected, parent.collisionLinks(), tool.collisionLinks());
+
   connected.name = new_name;
-  addToolCollisions(connected, tool.collisionLinks());
+  connected._mountFrame = tool.mountFrame();
+  connected._collisionLinks = parent.collisionLinks();
+  connected._collisionLinks.insert(connected._collisionLinks.end(), tool.collisionLinks().begin(),
+                                   tool.collisionLinks().end());
+
   return connected;
 }
 
@@ -229,7 +223,7 @@ mc_rbdyn::RobotModule * createVariants(const std::string & raw_name,
     auto bota = loadTool(bota_mod);
     if(!bota) return nullptr;
 
-    auto kinova_bota = attachTool(kinova, "tool_frame", *bota, "kinova_bota");
+    auto kinova_bota = attachTool(kinova, *bota, "kinova_bota");
 
     if(ee_mod.empty())
     {
@@ -239,7 +233,7 @@ mc_rbdyn::RobotModule * createVariants(const std::string & raw_name,
     auto ee = loadTool(ee_mod);
     if(!ee) return nullptr;
 
-    auto kinova_bota_ee = attachTool(kinova_bota, bota->wrenchFrame(), *ee, "kinova_bota_" + toLower(ee_mod));
+    auto kinova_bota_ee = attachTool(kinova_bota, *ee, "kinova_bota_" + toLower(ee_mod));
     return new mc_rbdyn::RobotModule(std::move(kinova_bota_ee));
   }
 
@@ -249,14 +243,14 @@ mc_rbdyn::RobotModule * createVariants(const std::string & raw_name,
     auto camera = loadTool(camera_mod);
     if(!camera) return nullptr;
 
-    auto kinova_camera = attachTool(kinova, "tool_frame", *camera, "kinova_camera");
+    auto kinova_camera = attachTool(kinova, *camera, "kinova_camera");
 
     if(!gripper_mod.empty())
     {
       auto gripper = loadTool(gripper_mod);
       if(!gripper) return nullptr;
 
-      auto kinova_cg = attachTool(kinova_camera, camera->wrenchFrame(), *gripper, "kinova_camera_gripper");
+      auto kinova_cg = attachTool(kinova_camera, *gripper, "kinova_camera_gripper");
       return new mc_rbdyn::RobotModule(std::move(kinova_cg));
     }
 
@@ -268,7 +262,7 @@ mc_rbdyn::RobotModule * createVariants(const std::string & raw_name,
     auto gripper = loadTool(gripper_mod);
     if(!gripper) return nullptr;
 
-    auto kinova_gripper = attachTool(kinova, "tool_frame", *gripper, "kinova_gripper");
+    auto kinova_gripper = attachTool(kinova, *gripper, "kinova_gripper");
     return new mc_rbdyn::RobotModule(std::move(kinova_gripper));
   }
 
